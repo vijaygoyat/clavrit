@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <title>Stripe Payment</title>
+    <script src="https://js.stripe.com/v3/"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f4f4f4;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+
+        .payment-container {
+            background: #fff;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
+            width: 100%;
+            max-width: 420px;
+            animation: fadeIn 0.8s ease;
+        }
+
+        h2 {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        input, select, button {
+            width: 100%;
+            padding: 10px;
+            margin-top: 10px;
+            font-size: 14px;
+            border-radius: 6px;
+            border: 1px solid #ccc;
+        }
+
+        button {
+            background-color: #5469d4;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        button:hover {
+            background-color: #3e4eb1;
+        }
+
+        .stripe-element {
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            background-color: #f9f9f9;
+            margin-top: 10px;
+        }
+
+        .card-fields {
+            display: flex;
+            gap: 10px;
+        }
+
+        .card-fields > div {
+            flex: 1;
+        }
+
+        #payment-result {
+            margin-top: 15px;
+            font-weight: bold;
+            text-align: center;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body>
+
+<div class="payment-container">
+    <h2>Secure Payment</h2>
+    <form id="payment-form">
+        <label>Cardholder Name</label>
+        <input type="text" id="cardholder-name" required>
+
+        <label>Email</label>
+        <input type="email" id="email" required>
+
+        <label>Amount (in ₹)</label>
+        <input type="number" id="amount" required min="1">
+
+        <label>Currency</label>
+        <select id="currency">
+            <option value="inr">INR</option>
+            <option value="usd">USD</option>
+        </select>
+
+        <label>Card Number</label>
+        <div id="card-number-element" class="stripe-element"></div>
+
+        <div class="card-fields">
+            <div>
+                <label>Expiry</label>
+                <div id="card-expiry-element" class="stripe-element"></div>
+            </div>
+            <div>
+                <label>CVC</label>
+                <div id="card-cvc-element" class="stripe-element"></div>
+            </div>
+        </div>
+
+        <button type="submit">Pay Now</button>
+        <p id="payment-result"></p>
+    </form>
+</div>
+
+<script>
+    const stripe = Stripe("pk_test_51RYitQQDTkvzKA5qU1QDpplmGgZMYCIXlCiE7WZ51ysxJDajyH44cKoZyVmMEXfiyJwOYWkif9LhfrroXHFCGwCa00atG9uiVL");
+    const elements = stripe.elements();
+
+    const style = {
+        base: {
+            fontSize: '16px',
+            color: '#32325d',
+            '::placeholder': { color: '#a0aec0' },
+        },
+        invalid: {
+            color: '#fa755a',
+        }
+    };
+
+    const cardNumber = elements.create('cardNumber', { style });
+    const cardExpiry = elements.create('cardExpiry', { style });
+    const cardCvc = elements.create('cardCvc', { style });
+
+    cardNumber.mount('#card-number-element');
+    cardExpiry.mount('#card-expiry-element');
+    cardCvc.mount('#card-cvc-element');
+
+    let clientSecret;
+
+    async function createPaymentIntent(details) {
+        const response = await fetch("/payment/create", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(details)
+        });
+        const data = await response.json();
+        return data.clientSecret;
+    }
+
+    document.getElementById("payment-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+
+        const name = document.getElementById("cardholder-name").value;
+        const email = document.getElementById("email").value;
+        const amount = document.getElementById("amount").value;
+        const currency = document.getElementById("currency").value;
+
+        const resultElement = document.getElementById("payment-result");
+        resultElement.textContent = "⏳ Processing...";
+
+        try {
+            const paymentDetails = {
+                amount: parseInt(amount) * 100,
+                currency: currency,
+                description: "Test Payment",
+                email: email
+            };
+
+            clientSecret = await createPaymentIntent(paymentDetails);
+
+            const { error, paymentIntent } = await stripe.confirmCardPayment(clientSecret, {
+                payment_method: {
+                    card: cardNumber,
+                    billing_details: { name: name }
+                }
+            });
+
+            if (error) {
+                resultElement.textContent = "❌ Payment failed: " + error.message;
+                resultElement.style.color = "red";
+            } else if (paymentIntent && paymentIntent.status === "succeeded") {
+                resultElement.textContent = "✅ Payment successful!";
+                resultElement.style.color = "green";
+            }
+        } catch (err) {
+            resultElement.textContent = "❌ Error: " + err.message;
+            resultElement.style.color = "red";
+        }
+    });
+</script>
+</body>
+</html>
